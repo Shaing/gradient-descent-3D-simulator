@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 梯度下降視覺化 (Gradient Descent Visualization)</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 three.js -->
+    <script async src="https://unpkg.com/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+        }
+    }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* 隱藏捲軸 */
+            background-color: #111827; /* 深灰背景 */
+        }
+        #controls {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background-color: rgba(31, 41, 55, 0.8); /* 半透明控制台 */
+            backdrop-filter: blur(10px);
+            border-radius: 0.75rem; /* 圓角 */
+            padding: 1.5rem;
+            color: white;
+            width: 300px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        label {
+            display: block;
+            margin-bottom: 0.25rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+        button {
+            width: 100%;
+            padding: 0.625rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        button:hover {
+            opacity: 0.85;
+        }
+        #info {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            background-color: rgba(31, 41, 55, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 0.75rem;
+            padding: 1rem 1.5rem;
+            color: white;
+            font-size: 0.875rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        /* 新增：數據日誌面板樣式 */
+        #data-log {
+            position: absolute;
+            bottom: 1rem;
+            left: 1rem;
+            background-color: rgba(31, 41, 55, 0.8); /* 半透明 */
+            backdrop-filter: blur(10px);
+            border-radius: 0.75rem;
+            padding: 1rem 1.5rem;
+            color: white;
+            width: 300px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 0.875rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            /* 新增：防止選取文字，提升懸停體驗 */
+            user-select: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-900">
+
+    <!-- 3D 畫布 -->
+    <div id="container"></div>
+
+    <!-- 資訊顯示 -->
+    <div id="info">
+        <div id="function-name" class="font-bold text-lg"></div>
+        <div>在 3D 視圖中拖曳以旋轉</div>
+        <div>滾動滾輪以縮放</div>
+    </div>
+
+    <!-- 控制面板 -->
+    <div id="controls">
+        <h2 class="text-xl font-bold mb-4">控制面板</h2>
+        
+        <!-- 參數調整 -->
+        <div class="mb-4">
+            <label for="learningRate">學習率 (Learning Rate): <span id="lr-value" class="font-mono">0.01</span></label>
+            <input type="range" id="learningRate" min="0.001" max="0.1" step="0.001" value="0.01">
+        </div>
+
+        <div class="mb-4">
+            <label for="momentum">動量 (Momentum): <span id="momentum-value" class="font-mono">0.8</span></label>
+            <input type="range" id="momentum" min="0" max="0.99" step="0.01" value="0.8">
+        </div>
+
+        <div class="mb-4">
+            <label for="noise">噪聲強度 (Noise / Entropy): <span id="noise-value" class="font-mono">0.0</span></label>
+            <input type="range" id="noise" min="0" max="5.0" step="0.1" value="0">
+        </div>
+
+        <!-- 動作按鈕 -->
+        <div class="mt-6 space-y-3">
+            <button id="resetButton" class="bg-blue-600 text-white">
+                重置模擬 (Reset)
+            </button>
+            <button id="changeFunctionButton" class="bg-indigo-600 text-white">
+                切換函數 (Toggle Function)
+            </button>
+        </div>
+
+        <p class="text-xs text-gray-400 mt-4">
+            觀察：高噪聲 (Entropy) 如何幫助優化器（球）跳出「局部最小值」（小凹坑），以尋找「全域最小值」（最低點）。
+            這對應了我們討論的：Entropy 提供了探索新路徑的能量。
+        </p>
+    </div>
+
+    <!-- 新增：數據日誌面板 -->
+    <div id="data-log">
+        <h3 class="text-lg font-bold text-gray-200 mb-3" style="font-family: 'Inter', sans-serif;">實時數據 (Live Data)</h3>
+        <div class="space-y-2">
+            <div>
+                <span class="text-blue-300">地形 (Function):</span>
+                <span id="log-function-formula" class="text-gray-300 break-all"></span>
+            </div>
+            <!-- 使用 flex justify-between 將標籤和數值推到兩側 -->
+            <div class="flex justify-between">
+                <span class="text-green-300">位置 (Pos) [x,y,z]:</span>
+                <!-- 新增 w-48 (12rem) 和 text-right 來固定寬度並靠右對齊 -->
+                <span id="log-position" class="text-gray-300 w-48 text-right"></span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-red-300">梯度 (Grad) [gx,gz]:</span>
+                <span id="log-gradient" class="text-gray-300 w-48 text-right"></span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-yellow-300">速度 (Vel) [vx,vz]:</span>
+                <span id="log-velocity" class="text-gray-300 w-48 text-right"></span>
+            </div>
+        </div>
+        <div id="log-pause-indicator" class="text-center text-xs text-yellow-400 mt-3 h-4"></div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { ParametricGeometry } from 'three/addons/geometries/ParametricGeometry.js';
+
+        let scene, camera, renderer, controls;
+        let surfaceMesh, optimizerBall, trailLine;
+        let trailPoints = [];
+        let currentFunction, functionName;
+        let optimizerState = { x: 0, z: 0, vx: 0, vz: 0 }; // 位置, 速度
+        let isLogPaused = false; // 新增：用於控制日誌暫停的旗標
+
+        // DOM 元素
+        const container = document.getElementById('container');
+        const lrSlider = document.getElementById('learningRate');
+        const momentumSlider = document.getElementById('momentum');
+        const noiseSlider = document.getElementById('noise');
+        const resetButton = document.getElementById('resetButton');
+        const changeFunctionButton = document.getElementById('changeFunctionButton');
+        const functionNameDisplay = document.getElementById('function-name');
+        // 新增日誌 DOM 元素
+        const logFunctionFormula = document.getElementById('log-function-formula');
+        const logPosition = document.getElementById('log-position');
+        const logGradient = document.getElementById('log-gradient');
+        const logVelocity = document.getElementById('log-velocity');
+        const dataLogPanel = document.getElementById('data-log'); // 新增：獲取日誌面板
+        const logPauseIndicator = document.getElementById('log-pause-indicator'); // 新增：暫停提示
+
+        // --- 損失函數 (Loss Functions) ---
+        // 這些函數定義了 3D 地形
+
+        // 函數 1: 簡單的碗 (Convex) - 只有一個最小值
+        const simpleBowl = {
+            name: "簡單地形 (Simple Bowl)",
+            formula: "f(x,z) = 0.1*(x²+z²)", // 新增公式
+            func: (x, z) => {
+                // f(x, z) = x^2 + z^2
+                return (x * x + z * z) * 0.1;
+            },
+            gradient: (x, z) => {
+                // df/dx = 2x
+                // df/dz = 2z
+                return { gx: 0.2 * x, gz: 0.2 * z };
+            }
+        };
+
+        // 函數 2: 複雜地形 (Non-Convex) - 有很多局部最小值
+        // 這是我們討論的 "Model Collapse" 盆地
+        const complexLandscape = {
+            name: "複雜地形 (Complex Landscape)",
+            formula: "f(x,z) = sin(2x)+cos(2z)+0.1*(x²+z²)+1", // 新增公式
+            func: (x, z) => {
+                // f(x, z) = sin(x*2) + cos(z*2) + (x^2 + z^2) * 0.1
+                return Math.sin(x * 2) + Math.cos(z * 2) + (x * x + z * z) * 0.1 + 1;
+            },
+            gradient: (x, z) => {
+                // df/dx = 2*cos(x*2) + 0.2*x
+                // df/dz = -2*sin(z*2) + 0.2*z
+                return {
+                    gx: 2 * Math.cos(x * 2) + 0.2 * x,
+                    gz: -2 * Math.sin(z * 2) + 0.2 * z
+                };
+            }
+        };
+
+        // --- 初始化 ---
+        function init() {
+            // 1. 場景
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111827);
+            scene.fog = new THREE.Fog(0x111827, 50, 100);
+
+            // 2. 相機
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(10, 15, 20);
+
+            // 3. 渲染器
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+
+            // 4. 燈光
+            scene.add(new THREE.AmbientLight(0x666666));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            dirLight.position.set(5, 10, 7);
+            scene.add(dirLight);
+
+            // 5. 控制器 (用滑鼠旋轉/縮放)
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // 6. 座標輔助
+            const gridHelper = new THREE.GridHelper(40, 40, 0x444444, 0x333333);
+            scene.add(gridHelper);
+
+            // 7. 優化器 (球)
+            const ballGeometry = new THREE.SphereGeometry(0.3, 32, 32);
+            const ballMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000, emissive: 0x550000 });
+            optimizerBall = new THREE.Mesh(ballGeometry, ballMaterial);
+            scene.add(optimizerBall);
+
+            // 8. 軌跡 (線)
+            const trailMaterial = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
+            const trailGeometry = new THREE.BufferGeometry();
+            trailLine = new THREE.Line(trailGeometry, trailMaterial);
+            scene.add(trailLine);
+
+            // 9. 設置初始函數
+            currentFunction = complexLandscape;
+            createSurface();
+            resetSimulation();
+
+            // 10. 綁定事件
+            window.addEventListener('resize', onWindowResize);
+            resetButton.addEventListener('click', resetSimulation);
+            changeFunctionButton.addEventListener('click', toggleFunction);
+
+            // 新增：綁定日誌面板的懸停事件
+            dataLogPanel.addEventListener('mouseenter', () => {
+                isLogPaused = true;
+                logPauseIndicator.textContent = '... [已凍結] ...';
+            });
+            dataLogPanel.addEventListener('mouseleave', () => {
+                isLogPaused = false;
+                logPauseIndicator.textContent = '';
+            });
+
+            // 11. 更新 UI 上的滑塊值
+            lrSlider.addEventListener('input', (e) => document.getElementById('lr-value').textContent = parseFloat(e.target.value).toFixed(3));
+            momentumSlider.addEventListener('input', (e) => document.getElementById('momentum-value').textContent = parseFloat(e.target.value).toFixed(2));
+            noiseSlider.addEventListener('input', (e) => document.getElementById('noise-value').textContent = parseFloat(e.target.value).toFixed(1));
+        }
+
+        // --- 創建 3D 地形 ---
+        function createSurface() {
+            if (surfaceMesh) {
+                scene.remove(surfaceMesh);
+                surfaceMesh.geometry.dispose();
+                surfaceMesh.material.dispose();
+            }
+
+            // 使用 ParametricGeometry 根據我們的函數生成表面
+            const parametricFunc = (u, v, target) => {
+                const x = u * 40 - 20; // 範圍 -20 到 20
+                const z = v * 40 - 20; // 範圍 -20 到 20
+                const y = currentFunction.func(x, z);
+                target.set(x, y, z);
+            };
+
+            const geometry = new ParametricGeometry(parametricFunc, 50, 50);
+            const material = new THREE.MeshPhongMaterial({
+                color: 0x1d4ed8, // 藍色
+                wireframe: true,
+                opacity: 0.3,
+                transparent: true
+            });
+
+            surfaceMesh = new THREE.Mesh(geometry, material);
+            scene.add(surfaceMesh);
+            functionNameDisplay.textContent = currentFunction.name;
+            logFunctionFormula.textContent = currentFunction.formula; // 更新公式顯示
+        }
+
+        // --- 重置模擬 ---
+        function resetSimulation() {
+            // 隨機一個起始點
+            optimizerState.x = Math.random() * 20 - 10; // -10 到 10
+            optimizerState.z = Math.random() * 20 - 10; // -10 到 10
+            optimizerState.vx = 0;
+            optimizerState.vz = 0;
+
+            // 更新球的位置
+            optimizerBall.position.x = optimizerState.x;
+            optimizerBall.position.z = optimizerState.z;
+            optimizerBall.position.y = currentFunction.func(optimizerState.x, optimizerState.z) + 0.3; // +0.3 讓它在表面上
+
+            // 清空軌跡
+            trailPoints = [new THREE.Vector3(optimizerState.x, optimizerBall.position.y, optimizerState.z)];
+            trailLine.geometry.setFromPoints(trailPoints);
+            
+            // 重置時更新日誌
+            updateDataLog(0, 0);
+        }
+
+        // --- 切換函數 ---
+        function toggleFunction() {
+            currentFunction = (currentFunction === simpleBowl) ? complexLandscape : simpleBowl;
+            createSurface();
+            resetSimulation();
+        }
+
+        // --- 視窗大小調整 ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- 新增：更新數據日誌的輔助函數 ---
+        function updateDataLog(gx, gz) {
+            const x = optimizerState.x;
+            const z = optimizerState.z;
+            const y = optimizerBall.position.y - 0.3; // 獲取球體在表面上的 y 座標
+            const vx = optimizerState.vx;
+            const vz = optimizerState.vz;
+
+            // 使用 toFixed 保持顯示整潔
+            logPosition.textContent = `[${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}]`;
+            logGradient.textContent = `[${gx.toFixed(2)}, ${gz.toFixed(2)}]`;
+            logVelocity.textContent = `[${vx.toFixed(2)}, ${vz.toFixed(2)}]`;
+        }
+
+        // --- 核心：動畫循環 (Game Loop) ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 1. 更新控制器
+            controls.update();
+
+            // 2. 從 UI 獲取當前參數
+            const learningRate = parseFloat(lrSlider.value);
+            const momentum = parseFloat(momentumSlider.value);
+            const noiseStrength = parseFloat(noiseSlider.value);
+
+            // 3. 計算梯度 (Gradient)
+            const { gx, gz } = currentFunction.gradient(optimizerState.x, optimizerState.z);
+
+            // 4. 加入噪聲 (Noise / Entropy)
+            // 這是我們討論的關鍵：注入隨機性來探索
+            const noiseX = (Math.random() - 0.5) * 2 * noiseStrength;
+            const noiseZ = (Math.random() - 0.5) * 2 * noiseStrength;
+
+            // 5. 更新速度 (Velocity) - 包含動量
+            // v = (momentum * v) - lr * (gradient + noise)
+            optimizerState.vx = (optimizerState.vx * momentum) - learningRate * (gx + noiseX);
+            optimizerState.vz = (optimizerState.vz * momentum) - learningRate * (gz + noiseZ);
+
+            // 6. 更新位置 (Position)
+            // p = p + v
+            optimizerState.x += optimizerState.vx;
+            optimizerState.z += optimizerState.vz;
+
+            // 限制邊界，防止球跑太遠
+            optimizerState.x = Math.max(-20, Math.min(20, optimizerState.x));
+            optimizerState.z = Math.max(-20, Math.min(20, optimizerState.z));
+
+            // 7. 更新球的 3D 座標
+            const newY = currentFunction.func(optimizerState.x, optimizerState.z);
+            optimizerBall.position.set(optimizerState.x, newY + 0.3, optimizerState.z);
+
+            // 8. 更新軌跡
+            trailPoints.push(optimizerBall.position.clone());
+            if (trailPoints.length > 1000) {
+                trailPoints.shift(); // 保持軌跡長度
+            }
+            trailLine.geometry.setFromPoints(trailPoints);
+            trailLine.geometry.attributes.position.needsUpdate = true;
+            
+            // 9. 更新數據日誌 (僅在未暫停時)
+            if (!isLogPaused) {
+                updateDataLog(gx, gz);
+            }
+
+            // 10. 渲染 (原為 9)
+            renderer.render(scene, camera);
+        }
+
+        // 啟動
+        init();
+        animate();
+
+    </script>
+</body>
+</html>
