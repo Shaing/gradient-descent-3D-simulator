@@ -1,5 +1,5 @@
 [繁體中文](./README.md)
-# 3D Gradient Descent: Visualizing the Probabilistic Landscape of AI
+# 3D Gradient Descent: Visualizing the Probabilistic Landscape of AI ([link](https://shaing.github.io/gradient-descent-3D-simulator/))
 
 ![ss](./screenshot.png)
 
