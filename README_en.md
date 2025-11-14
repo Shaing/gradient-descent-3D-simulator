@@ -1,6 +1,8 @@
 [繁體中文](./README.md)
 # 3D Gradient Descent: Visualizing the Probabilistic Landscape of AI
 
+![ss](./screenshot.png)
+
 This is more than just a 3D Gradient Descent visualization. It's an interactive lab for exploring the core mechanisms behind AI and Large Language Model (LLM) behavior: **Noise and Entropy**.
 
 ## This project aims to answer a core question: Why does AI *appear* to be "creative"?

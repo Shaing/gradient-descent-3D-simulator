@@ -1,6 +1,8 @@
 [English](./README_en.md)
 # 3D 梯度下降視覺化：探索 AI 行為的機率地形
 
+![ss](./screenshot.png)
+
 這不僅是一個 3D 梯度下降 (Gradient Descent) 的視覺化工具，更是一個互動實驗，用以探索 AI 和大型語言模型 (LLM) 行為的核心機制：Noise (噪聲) 與 Entropy (熵)。
 
 ## 本專案旨在回答一個核心問題：為什麼 AI 看似具有「創造力」？
